@@ -9,6 +9,8 @@ void printu_exit(char *argv[]);
 int parse_opt(int argc, char *argv[]);
 void list_tdir(void);
 void recover_tpath(void);
+short not_long_fn(char *input);
+short vaild_fn(int mode);
 
 void printu_exit(char *argv[]){
     printf("Usage: %s -d [device filename] [other arguments]\n", argv[0]);
@@ -40,6 +42,21 @@ int parse_opt(int argc, char *argv[]){
     return (state - 2);
 }
 
+short not_long_fn(char *input, short is_dir){
+    char *target;
+    strcpy(target, input);
+    char *path, *name, *ext;
+    path = strtok(target, '.');
+    if (ext = strtok(NULL, '.')){
+        if (strlen(ext) < 1 || strlen(ext) > 3) return 0;
+    }
+    if (strlen(targ) 
+}
+
+short valid_fn(int mode){
+    int len
+}
+
 void list_tdir(void){
     printf("Task: to list target directory %s from device %s\n", target, device);
 }
@@ -50,6 +67,8 @@ void recover_tpath(void){
 
 int main(int argc, char *argv[]){
     int mode = parse_opt(argc, argv);
+    valid_fn(mode);
+
     if (mode) recover_tpath();
     else list_tdir();
     return 0;
