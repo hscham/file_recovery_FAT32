@@ -31,6 +31,10 @@ short is_lfn(char *input){
     char target[strlen(input)];
     strcpy(target, input);
     char *name_e, *name, *ext, *tmp;
+    if (strlen(target) == 1 && target[0] == '/'){
+        name = target;
+        return 0;
+    }
     name_e = strtok(input, "/");
     while (tmp = strtok(NULL, "/"))
         name_e = tmp;
