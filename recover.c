@@ -28,19 +28,19 @@ void printu_exit(char *argv[]){
 }
 
 short is_lfn(char *input){
-    char target[strlen(input)];
-    strcpy(target, input);
+    char input_t[strlen(input)];
+    strcpy(input_t, input);
     char *name_e, *name, *ext, *tmp;
-    if (strlen(target) == 1 && target[0] == '/'){
-        name = target;
+    if (strlen(input_t) == 1 && input_t[0] == '/'){
+        name = input_t;
         return 0;
     }
     name_e = strtok(input, "/");
     while (tmp = strtok(NULL, "/"))
         name_e = tmp;
-    //Check target does not start with '.'
+    //Check input_t does not start with '.'
     if (name_e[0] == '.') return 1;
-    //Check target contains no illegal characters
+    //Check input_t contains no illegal characters
     int i;
     short dotflag = 0;
     for (i = 0; i < strlen(name_e); i++){
@@ -50,7 +50,7 @@ short is_lfn(char *input){
         else if (c == 46) return 2; 
         else return 3;
     }
-    //Check target name (without extension) length
+    //Check input_t name (without extension) length
     name = strtok(name_e, ".");
     if (strlen(name) < 1 || strlen(name) > 8) return 4;
     if (ext = strtok(NULL, ".")){
