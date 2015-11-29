@@ -152,14 +152,17 @@ void process_dirname(void){
     char name_e[FN_LEN + 1];
     char *name, *ext;
     name = strtok(name_e, ".");
-    ext = strtok(NULL, ".");
-    printf("name: %s, ext: %s\n", name, ext);
     memcpy(tg_list[tg_height-1], name, strlen(name));
     for (j = strlen(name); j < 8; j++)
         tg_list[tg_height-1][j] = ' ';
-    memcpy(tg_list[tg_height-1] + 8, ext, strlen(ext));
-    for (j = 8 + strlen(ext); j < FN_LEN; j++)
-        tg_list[tg_height-1][j] = ' ';
+    if (ext = strtok(NULL, ".")){
+        memcpy(tg_list[tg_height-1] + 8, ext, strlen(ext));
+        for (j = 8 + strlen(ext); j < FN_LEN; j++)
+            tg_list[tg_height-1][j] = ' ';
+    } else {
+        for (j = 8; j < FN_LEN; j++)
+            tg_list[tg_height-1][j] = ' ';
+    }
     tg_list[tg_height-1][FN_LEN] = '\0';
 
     for (i = 0; i < tg_height; i++)
