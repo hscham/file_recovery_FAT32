@@ -7,6 +7,7 @@
 #include <fcntl.h>
 
 #define INPUT_MAX 1024
+#define FN_LEN 11
 
 struct BootEntry
 {
@@ -55,8 +56,9 @@ struct DirEntry
     unsigned long DIR_FileSize;
 }__attribute__((packed));
 
-char *device, *target, *dest, *tg_list[INPUT_MAX / 2];
+char *device, *target, *p_target, *dest, *tg_list_ptr[INPUT_MAX / 2], tg_list[FN_LEN + 1][INPUT_MAX / 2];
 int fd, err, fat_sec, data_sec, tg_height = 0; //tg_height of root = 0; +1 for each subdirectory layer
+short is_recover;
 struct BootEntry boot_entry;
 const char *lfn_err_msg[10] = { 
     "Target name should not start with dot '.'",
@@ -71,11 +73,19 @@ void parse_target(void);
 short is_lfn(void);
 void print_lfn_errmsg(int err);
 int parse_opt(int argc, char *argv[]);
+void process_dirname(void);
 void list_tdir(void);
 void recover_tpath(void);
 void init_boot_entry(void);
 int read_sec(int sec_num, unsigned char *buf, int num_sec);
 unsigned short find_clus(void);
+
+void print_dir_tree(void){
+    int i;
+    printf("tg_height = %d\n", tg_height);
+    for (i = 0; i < tg_height; i++)
+        printf("i = %d: %s\n", i, tg_list_ptr[i]);
+}
 
 void printu_exit(char *argv[]){
     printf("Usage: %s -d [device filename] [other arguments]\n", argv[0]);
@@ -85,42 +95,41 @@ void printu_exit(char *argv[]){
 }
 
 void parse_target(void){
-    char p_target[strlen(input)];
-    memcpy(p_target, target, strlen(input));
-    tg_list[tg_height] = strtok(p_target, "/");
-    if (!tg_list[tg_height])
+    p_target = malloc(sizeof(strlen(target)));
+    strcpy(p_target, target);
+    tg_list_ptr[tg_height] = strtok(p_target, "/");
+    if (!tg_list_ptr[tg_height])
         return;
     tg_height++;
-    while(tg_list[tg_height] = strtok(NULL, "/")){
+    while(tg_list_ptr[tg_height] = strtok(NULL, "/")){
         tg_height++;
     }
+    print_dir_tree();
 }
 
 short is_lfn(void){
-    return 0;
-}
-
-short is_lfn(char *input){
-    if (strlen(lfn_target) == 1 && lfn_target[0] == '/'){
+    if (!tg_height)
         return 0;
-    }
-    //Check lfn_target does not start with '.'
-    if (name_e[0] == '.') return 1;
+    char c, *name_e = tg_list_ptr[tg_height-1];
+    printf("name_e: %s\n", name_e);
     //Check lfn_target contains no illegal characters
     int i;
     short dotflag = 0;
     for (i = 0; i < strlen(name_e); i++){
-        char c = name_e[i];
-        if ((c == 33) || (c > 34 && c < 42) || c == 45 || (c > 64 && c < 91) || c == 94 || c ==95 || c == 123 || c == 125 || c == 126) ;
+        c = name_e[i];
+        if ((c == 33) || (c > 34 && c < 42) || c == 45 || (c > 47 && c < 58) || (c > 64 && c < 91) || c == 94 || c ==95 || c == 123 || c == 125 || c == 126) ;
         else if (c == 46 && !dotflag) dotflag = 1; 
         else if (c == 46) return 2; 
         else return 3;
     }
     //Check lfn_target name (without extension) length
-    name = strtok(name_e, ".");
+    char name[FN_LEN + 1];
+    //char *name = malloc(sizeof(FN_LEN + 1));
+    strcpy(name, name_e);
     if (strlen(name) < 1 || strlen(name) > 8) return 4;
+    //Check extension length
+    char *ext;
     if (ext = strtok(NULL, ".")){
-        //Check extension length
         if (strlen(ext) < 1 || strlen(ext) > 3) return 5;
     }
     return 0;
@@ -128,6 +137,33 @@ short is_lfn(char *input){
 
 void print_lfn_errmsg(int err){
     printf("Long filenames not supported. %s\n", lfn_err_msg[err-1]);
+}
+
+void process_dirname(void){
+    int i, j;
+
+    for (i = 0; i < tg_height-1; i++){
+        memcpy(tg_list[i], tg_list_ptr[i], strlen(tg_list_ptr[i]));
+        for (j = strlen(tg_list_ptr[i]); j < FN_LEN; j++)
+            tg_list[i][j] = ' ';
+        tg_list[i][FN_LEN+1] = '\0';
+    }
+
+    char name_e[FN_LEN + 1];
+    char *name, *ext;
+    name = strtok(name_e, ".");
+    ext = strtok(NULL, ".");
+    printf("name: %s, ext: %s\n", name, ext);
+    memcpy(tg_list[tg_height-1], name, strlen(name));
+    for (j = strlen(name); j < 8; j++)
+        tg_list[tg_height-1][j] = ' ';
+    memcpy(tg_list[tg_height-1] + 8, ext, strlen(ext));
+    for (j = 8 + strlen(ext); j < FN_LEN; j++)
+        tg_list[tg_height-1][j] = ' ';
+    tg_list[tg_height-1][FN_LEN] = '\0';
+
+    for (i = 0; i < tg_height; i++)
+        printf("processed dir name at %d: %s(end)\n", i, tg_list[i]);
 }
 
 int parse_opt(int argc, char *argv[]){
@@ -143,10 +179,11 @@ int parse_opt(int argc, char *argv[]){
             else printu_exit(argv);
             target = optarg;
             parse_target();
-            if (err = is_lfn(target)){
+            if (err = is_lfn()){
                 print_lfn_errmsg(err);
                 exit(1);
             }
+            process_dirname();
         } else if (state == 3){
             if (opt != 'o') printu_exit(argv);
             dest = optarg;
@@ -155,6 +192,7 @@ int parse_opt(int argc, char *argv[]){
             printu_exit(argv);
     } 
     if (state != 2 && state != 4) printu_exit(argv);
+    printf("leaving parse_opt, device = %s, target = %s\n", device, target);
     return (state - 2);
 }
 
@@ -188,7 +226,7 @@ int read_sec(int sec_num, unsigned char *buf, int num_sec) {
 }
 
 unsigned short find_clus(void) {
-    unsigned short clus = boot_entyr.BPB_RootClus;
+    unsigned short clus = boot_entry.BPB_RootClus;
     int i;
     // TODO: for loop, search target's cluster
     // for (i=0; i<tg_height; i++) {}
@@ -196,6 +234,8 @@ unsigned short find_clus(void) {
 }
 
 void list_tdir(void){
+    //printf("Task: to list target directory %s from device %s\n", target, device);
+    //return;
     static int num = 0;
     //    int root_dir_sec = data_sec + (boot_entry.BPB_RootClus-2) * boot_entry.BPB_SecPerClus;
     unsigned char tmp[boot_entry.BPB_SecPerClus * boot_entry.BPB_BytsPerSec];
@@ -300,14 +340,14 @@ void recover_tpath(void){
 }
 
 int main(int argc, char *argv[]){
-    int mode = parse_opt(argc, argv);
+    is_recover = parse_opt(argc, argv);
     if((fd = open(device, O_RDWR)) == -1)
-      perror("open");
+        perror("open");
 
     /* read boot sector */
     init_boot_entry();
 
-    if (mode) recover_tpath();
+    if (is_recover) recover_tpath();
     else list_tdir();
 
     close(fd);
