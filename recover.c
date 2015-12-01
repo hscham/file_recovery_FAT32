@@ -145,41 +145,40 @@ int parse_opt(int argc, char *argv[]){
 }
 
 void init_boot_entry() {
-  char tmp[100];
-  lseek(fd, 0, SEEK_SET);
-  if(read(fd, tmp, 100) == -1)
-    perror("read");
-  memcpy(&boot_entry, tmp, sizeof(struct BootEntry));
-  /*
-  printf("%d\n", boot_entry.BPB_BytsPerSec);
-  printf("%d\n", boot_entry.BPB_SecPerClus);
-  printf("%d\n", boot_entry.BPB_RsvdSecCnt);
-  printf("%d\n", boot_entry.BPB_NumFATs);
-  printf("Tot16 %d\n", boot_entry.BPB_TotSec16);
-  printf("%d\n", boot_entry.BPB_TotSec32);
-  printf("FAT size 32 %d\n", boot_entry.BPB_FATSz32);
-  printf("%d\n", boot_entry.BPB_RootClus);
-  printf("size is %d\n", sizeof(struct BootEntry));
-  */
+    char tmp[100];
+    lseek(fd, 0, SEEK_SET);
+    if(read(fd, tmp, 100) == -1)
+	perror("read");
+    memcpy(&boot_entry, tmp, sizeof(struct BootEntry));
+    /*
+      printf("%d\n", boot_entry.BPB_BytsPerSec);
+      printf("%d\n", boot_entry.BPB_SecPerClus);
+      printf("%d\n", boot_entry.BPB_RsvdSecCnt);
+      printf("%d\n", boot_entry.BPB_NumFATs);
+      printf("Tot16 %d\n", boot_entry.BPB_TotSec16);
+      printf("%d\n", boot_entry.BPB_TotSec32);
+      printf("FAT size 32 %d\n", boot_entry.BPB_FATSz32);
+      printf("%d\n", boot_entry.BPB_RootClus);
+      printf("size is %d\n", sizeof(struct BootEntry));
+    */
 }
 
 int read_sec(int sec_num, unsigned char *buf, int num_sec) {
-  int len;
-  lseek(fd, sec_num*boot_entry.BPB_BytsPerSec, SEEK_SET);
-  if ((len = read(fd, buf, num_sec*boot_entry.BPB_BytsPerSec)) == -1)
-    perror("read");
-  return len;
+    int len;
+    lseek(fd, sec_num*boot_entry.BPB_BytsPerSec, SEEK_SET);
+    if ((len = read(fd, buf, num_sec*boot_entry.BPB_BytsPerSec)) == -1)
+	perror("read");
+    return len;
 }
 
 void list_tdir(void){
     int data_sec = boot_entry.BPB_RsvdSecCnt + boot_entry.BPB_NumFATs * boot_entry.BPB_FATSz32, i = 0;
     int root_dir_sec = data_sec + (boot_entry.BPB_RootClus-2) * boot_entry.BPB_BytsPerSec;
-    unsigned char tmp[512];
-    //    unsigned char *tmp = (unsigned char *)malloc(sizeof(unsigned char) * 512);
+    unsigned char tmp[boot_entry.BPB_SecPerClus * boot_entry.BPB_BytsPerSec];
     struct DirEntry dir_entry;
 
     read_sec(root_dir_sec, tmp, boot_entry.BPB_SecPerClus);
-    memcpy(&dir_entry, tmp + i*sizeof(struct DirEntry), sizeof(struct DirEntry));
+    memcpy(&dir_entry, tmp, sizeof(struct DirEntry));
 
     while ((char)dir_entry.DIR_Name[0] != 0) {
 	int j = 0;
@@ -225,7 +224,7 @@ void recover_tpath(void){
 
 int main(int argc, char *argv[]){
     int mode = parse_opt(argc, argv);
-    if((fd = open(device, O_RDONLY)) == -1)
+    if((fd = open(device, O_RDWR)) == -1)
       perror("open");
 
     /* read boot sector */
