@@ -151,7 +151,6 @@ int parse_opt(int argc, char *argv[]){
                 print_lfn_errmsg(err);
                 exit(1);
             }
-            print_dir_tree();
             if(tg_height) process_dirname();
         } else if (state == 3){
             if (opt != 'o') printu_exit(argv);
@@ -161,7 +160,6 @@ int parse_opt(int argc, char *argv[]){
             printu_exit(argv);
     } 
     if (state != 2 && state != 4) printu_exit(argv);
-    printf("| leaving parse_opt, device = %s, target = %s\n", device, target);
     return (state - 2);
 }
 
@@ -181,7 +179,6 @@ char is_lfn(void){
     if (!tg_height)
         return 0;
     char c, *name_e = tg_list_ptr[tg_height-1];
-    printf("name_e: %s\n", name_e);
     //Check lfn_target contains no illegal characters
     int i;
     short dotflag = 0;
@@ -230,9 +227,6 @@ void process_dirname(void){
             tg_list[tg_height-1][j] = ' ';
     }
     tg_list[tg_height-1][FN_LEN] = '\0';
-
-    for (i = 0; i < tg_height; i++)
-        printf("~ processed dir name at %d: %s(end)\n", i, tg_list[i]);
 }
 
 void init_boot_entry() {
@@ -252,7 +246,6 @@ unsigned short find_clus(void){
         Find next (sub)dir by looping through all dir entries in that cluster.  */
 
     unsigned short clus = boot_entry.BPB_RootClus;
-    printf("~initial value of find_clus: %d\n", clus);
     int i, j;
     char found = 1;
     unsigned char tmp[clus_size];
@@ -294,7 +287,6 @@ unsigned short find_clus(void){
     }
 
     memcpy(&recover_dir_entry, &dir_entry, dir_entry_size);
-    printf("found: %d, clus: %d\n", found, clus);
     if (clus == 0) clus = 1;
     return (is_recover && !found)? 0 : clus;
 }
@@ -365,13 +357,11 @@ void list_tdir(void){
 }
 
 void recover_tpath(void){
-    printf("recover path\n");
     unsigned char tmp[clus_size];
     unsigned short tg_clus = find_clus();
     struct DirEntry dir_entry;
     int output_fd;
 
-    printf("recover tg_clus = %d\n", tg_clus);
     if (!tg_clus){
         printf("%s: error - file not found\n", target);
         return;
@@ -388,23 +378,17 @@ void recover_tpath(void){
         printf("%s: error - fail to recover\n", target);
         return;
     }
-    printf("~before read sec\n");
 
     memcpy(&dir_entry, &recover_dir_entry, dir_entry_size);
-    printf("name of dir_entry: %s\n", dir_entry.DIR_Name);
     
     unsigned long file_size = dir_entry.DIR_FileSize;
     unsigned char content[file_size];
-    printf("data_sec = %d, tg_clus = %d, file_size = %ld\n", data_sec, tg_clus, file_size);
     read_sec(data_sec + (tg_clus-2) * boot_entry.BPB_SecPerClus, content, file_size);
-    printf("~after read sec\n");
 
     if ((output_fd = open(dest, O_CREAT|O_WRONLY|O_TRUNC, 0640)) == -1)
         perror("open");
-    printf("~after open output_fd\n");
     if (write(output_fd, content, file_size) == -1)
         perror("write");
-    printf("~after write to output_fd\n");
     close(output_fd);
     printf("%s: reocvered\n", target);
 }
