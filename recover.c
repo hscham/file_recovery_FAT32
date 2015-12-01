@@ -172,49 +172,60 @@ int read_sec(int sec_num, unsigned char *buf, int num_sec) {
 }
 
 void list_tdir(void){
-    int data_sec = boot_entry.BPB_RsvdSecCnt + boot_entry.BPB_NumFATs * boot_entry.BPB_FATSz32, i = 0;
-    int root_dir_sec = data_sec + (boot_entry.BPB_RootClus-2) * boot_entry.BPB_BytsPerSec;
+    static int num = 0;
+    int fat_sec = boot_entry.BPB_RsvdSecCnt;
+    int data_sec = boot_entry.BPB_RsvdSecCnt + boot_entry.BPB_NumFATs * boot_entry.BPB_FATSz32;
+    //    int root_dir_sec = data_sec + (boot_entry.BPB_RootClus-2) * boot_entry.BPB_SecPerClus;
     unsigned char tmp[boot_entry.BPB_SecPerClus * boot_entry.BPB_BytsPerSec];
+    unsigned short clus = boot_entry.BPB_RootClus;
     struct DirEntry dir_entry;
 
-    read_sec(root_dir_sec, tmp, boot_entry.BPB_SecPerClus);
-    memcpy(&dir_entry, tmp, sizeof(struct DirEntry));
+    while (clus != 0xFFFF) {
+	int i = 0;
+	read_sec(data_sec + (clus-2) * boot_entry.BPB_SecPerClus, tmp, boot_entry.BPB_SecPerClus);
+	memcpy(&dir_entry, tmp, sizeof(struct DirEntry));
+	while ((char)dir_entry.DIR_Name[0] != 0 && i < (boot_entry.BPB_BytsPerSec/32)) { /* number of 32-bit dir_entry per sec */
+	    int j = 0;
+	    printf("%d, ", ++num);
 
-    while ((char)dir_entry.DIR_Name[0] != 0) {
-	int j = 0;
-	printf("%d, ", ++i);
-	
-	/* print filename */
-	if (dir_entry.DIR_Name[0] == (char)0xE5) {
-	    putchar('?');
-	    j = 1;
-	}
+	    /* print filename */
+	    if (dir_entry.DIR_Name[0] == (char)0xE5) {
+		putchar('?');
+		j = 1;
+	    }
 
-	for (; j<8; j++) {
-	    if (dir_entry.DIR_Name[j] == ' ')
-		continue;
-	    else
-		putchar(dir_entry.DIR_Name[j]);
-	}
-
-	if (dir_entry.DIR_Attr == 16)
-	    putchar('/');
-	else {
-	    putchar('.');
-	    for (; j<11; j++) {
+	    for (; j<8; j++) {
 		if (dir_entry.DIR_Name[j] == ' ')
 		    continue;
 		else
 		    putchar(dir_entry.DIR_Name[j]);
 	    }
+
+	    if (dir_entry.DIR_Attr == 16)
+		putchar('/');
+	    else {
+		putchar('.');
+		for (; j<11; j++) {
+		    if (dir_entry.DIR_Name[j] == ' ')
+			continue;
+		    else
+			putchar(dir_entry.DIR_Name[j]);
+		}
+	    }
+
+	    /* print file size */
+	    printf(", %ld", dir_entry.DIR_FileSize);
+	    /* print starting cluster */
+	    printf(", %d\n", dir_entry.DIR_FstClusLO);
+	
+	    memcpy(&dir_entry, tmp + ++i * sizeof(struct DirEntry), sizeof(struct DirEntry));
 	}
 
-        /* print file size */
-        printf(", %ld", dir_entry.DIR_FileSize);
-        /* print starting cluster */
-        printf(", %d\n", dir_entry.DIR_FstClusLO);
-	
-	memcpy(&dir_entry, tmp + i*sizeof(struct DirEntry), sizeof(struct DirEntry));
+	/* find next cluster */
+	lseek(fd, fat_sec * boot_entry.BPB_BytsPerSec + clus * 4, SEEK_SET);
+	read(fd, &clus, 4);
+	//	printf("next clus %d\n", clus);
+	//	read_sec(data_sec+(clus-2), tmp, boot_entry.BPB_SecPerClus);
     }
 }
 
