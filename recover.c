@@ -57,7 +57,7 @@ struct DirEntry
 }__attribute__((packed));
 
 char *device, *target, *p_target, *dest, *tg_list_ptr[INPUT_MAX / 2], tg_list[FN_LEN + 1][INPUT_MAX / 2];
-int fd, err, fat_sec, data_sec, tg_height = 0; //tg_height of root = 0; +1 for each subdirectory layer
+int fd, err, fat_sec, data_sec, clus_size, tg_height = 0; //tg_height of root = 0; +1 for each subdirectory layer
 short is_recover;
 struct BootEntry boot_entry;
 const char *lfn_err_msg[10] = { 
@@ -78,6 +78,7 @@ void list_tdir(void);
 void recover_tpath(void);
 void init_boot_entry(void);
 int read_sec(int sec_num, unsigned char *buf, int num_sec);
+int write_sec(int sec_num, unsigned char *buf, int num_sec);
 unsigned short find_clus(void);
 
 void print_dir_tree(void){
@@ -186,7 +187,8 @@ int parse_opt(int argc, char *argv[]){
                 print_lfn_errmsg(err);
                 exit(1);
             }
-            process_dirname();
+	    if(tg_height)
+		process_dirname();
         } else if (state == 3){
             if (opt != 'o') printu_exit(argv);
             dest = optarg;
@@ -207,6 +209,7 @@ void init_boot_entry() {
     memcpy(&boot_entry, tmp, sizeof(struct BootEntry));
     fat_sec = boot_entry.BPB_RsvdSecCnt;
     data_sec = boot_entry.BPB_RsvdSecCnt + boot_entry.BPB_NumFATs * boot_entry.BPB_FATSz32;
+    clus_size = boot_entry.BPB_SecPerClus * boot_entry.BPB_BytsPerSec;
     /*
       printf("%d\n", boot_entry.BPB_BytsPerSec);
       printf("%d\n", boot_entry.BPB_SecPerClus);
@@ -228,20 +231,62 @@ int read_sec(int sec_num, unsigned char *buf, int num_sec) {
     return len;
 }
 
+int write_sec(int sec_num, unsigned char *buf, int num_sec) {
+    int len;
+    lseek(fd, sec_num*boot_entry.BPB_BytsPerSec, SEEK_SET);
+    if ((len = write(fd, buf, num_sec*boot_entry.BPB_BytsPerSec)) == -1)
+	perror("write");
+    return len;
+}
+
 unsigned short find_clus(void) {
     unsigned short clus = boot_entry.BPB_RootClus;
-    int i;
-    // TODO: for loop, search target's cluster
-    // for (i=0; i<tg_height; i++) {}
+    int i, found;
+    unsigned char tmp[clus_size];
+    struct DirEntry dir_entry;
+
+    for (i=0; i<tg_height; i++) {
+	printf("target is: %s\n", tg_list[i]);
+	found = 0;
+
+	if (is_recover && i == (tg_height-1))  /* if reach the filename */
+	    *(tg_list[i]) = (char)0xE5;
+
+	while (clus != 0xFFFF) {
+	    int j = 0;
+	    read_sec(data_sec + (clus-2) * boot_entry.BPB_SecPerClus, tmp, boot_entry.BPB_SecPerClus);
+	    memcpy(&dir_entry, tmp, sizeof(struct DirEntry));
+	    while((char)dir_entry.DIR_Name[0] != 0 && j < (boot_entry.BPB_BytsPerSec/32)) {
+		if (!strncmp(tg_list[i], dir_entry.DIR_Name, FN_LEN)) { /* find the subdir */
+		    if ((i != (tg_height-1) && dir_entry.DIR_Attr == 16) || i == (tg_height-1)) {
+			found = 1;
+			printf("Target found!!!\n");
+			break;
+		    }
+		}
+		memcpy(&dir_entry, tmp + ++j * sizeof(struct DirEntry), sizeof(struct DirEntry));
+	    }
+
+	    /* find next cluster if not yet found */
+	    if (!found) {
+		lseek(fd, fat_sec * boot_entry.BPB_BytsPerSec + clus * 4, SEEK_SET);
+		read(fd, &clus, 4);
+	    } else {
+		clus = dir_entry.DIR_FstClusLO;
+		break;
+	    }
+	}
+    }
+    if (!found)
+	printf("%s:  error - file not found\n", target);
+
     return clus;
 }
 
 void list_tdir(void){
-    //printf("Task: to list target directory %s from device %s\n", target, device);
-    //return;
     static int num = 0;
     //    int root_dir_sec = data_sec + (boot_entry.BPB_RootClus-2) * boot_entry.BPB_SecPerClus;
-    unsigned char tmp[boot_entry.BPB_SecPerClus * boot_entry.BPB_BytsPerSec];
+    unsigned char tmp[clus_size];
     unsigned short clus = find_clus();
     struct DirEntry dir_entry;
 
@@ -297,19 +342,20 @@ void list_tdir(void){
 void recover_tpath(void){
     printf("Task: to recover destination path %s in target directory %s from device %s\n", dest, target, device);
     printf("target: %s\n", target);
-    /*
-    target = strtok(target, "/");
-    int fat_sec = boot_entry.BPB_RsvdSecCnt;
-    int data_sec = boot_entry.BPB_RsvdSecCnt + boot_entry.BPB_NumFATs * boot_entry.BPB_FATSz32;
-    unsigned char tmp[boot_entry.BPB_SecPerClus * boot_entry.BPB_BytsPerSec];
-    unsigned short clus = boot_entry.BPB_RootClus; // start at root cluster
-    struct DirEntry dir_entry;
 
+    unsigned char tmp[clus_size];
+    unsigned short clus = find_clus();
+
+    read_sec(data_sec + (clus-2) * boot_entry.BPB_SecPerClus, tmp, boot_entry.BPB_SecPerClus);
+    printf("%s\n", tmp);
+    /*
+
+    
     while (clus != 0xFFFF) {
         int i = 0;
         read_sec(data_sec + (clus-2) * boot_entry.BPB_SecPerClus, tmp, boot_entry.BPB_SecPerClus);
         memcpy(&dir_entry, tmp, sizeof(struct DirEntry));
-        while ((char)dir_entry.DIR_Name[0] != 0 && i < (boot_entry.BPB_BytsPerSec/32)) { /* number of 32-bit dir_entry per sec 
+        while ((char)dir_entry.DIR_Name[0] != 0 && i < (boot_entry.BPB_BytsPerSec/32)) {
 	    if (dir_entry.DIR_Attr != 16) {
 		int j, k = 0;
 		char name[11];
@@ -335,11 +381,10 @@ void recover_tpath(void){
             memcpy(&dir_entry, tmp + ++i * sizeof(struct DirEntry), sizeof(struct DirEntry));
         }
 
-        /* find next cluster 
         lseek(fd, fat_sec * boot_entry.BPB_BytsPerSec + clus * 4, SEEK_SET);
         read(fd, &clus, 4);
     }
-*/
+    */
 }
 
 int main(int argc, char *argv[]){
