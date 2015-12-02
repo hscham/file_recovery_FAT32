@@ -57,7 +57,7 @@ struct DirEntry
 }__attribute__((packed));
 
 char *device, *target, *p_target, *dest, *tg_list_ptr[INPUT_MAX / 2], tg_list[FN_LEN + 1][INPUT_MAX / 2];
-int fd, err, fat_sec, data_sec, clus_size, tg_height = 0; //tg_height of root = 0; +1 for each subdirectory layer
+int fd, err, fat_sec[2], data_sec, clus_size, tg_height = 0; //tg_height of root = 0; +1 for each subdirectory layer
 short is_recover;
 struct BootEntry boot_entry;
 const char *lfn_err_msg[10] = { 
@@ -207,7 +207,8 @@ void init_boot_entry() {
     if(read(fd, tmp, 100) == -1)
 	perror("read");
     memcpy(&boot_entry, tmp, sizeof(struct BootEntry));
-    fat_sec = boot_entry.BPB_RsvdSecCnt;
+    fat_sec[0] = boot_entry.BPB_RsvdSecCnt;
+    fat_sec[1] = boot_entry.BPB_RsvdSecCnt + boot_entry.BPB_FATSz32;
     data_sec = boot_entry.BPB_RsvdSecCnt + boot_entry.BPB_NumFATs * boot_entry.BPB_FATSz32;
     clus_size = boot_entry.BPB_SecPerClus * boot_entry.BPB_BytsPerSec;
     /*
@@ -241,23 +242,26 @@ int write_sec(int sec_num, unsigned char *buf, int num_sec) {
 
 unsigned short find_clus(void) {
     unsigned short clus = boot_entry.BPB_RootClus;
-    int i, found;
+    int i, j, found;
     unsigned char tmp[clus_size];
     struct DirEntry dir_entry;
 
     for (i=0; i<tg_height; i++) {
+	char *tg = malloc(sizeof(char) * FN_LEN);
 	printf("target is: %s\n", tg_list[i]);
 	found = 0;
 
+	memcpy(tg, tg_list[i], FN_LEN);
 	if (is_recover && i == (tg_height-1))  /* if reach the filename */
-	    *(tg_list[i]) = (char)0xE5;
+	    *(tg) = (char)0xE5;
 
 	while (clus != 0xFFFF) {
-	    int j = 0;
+	    j = 0;
 	    read_sec(data_sec + (clus-2) * boot_entry.BPB_SecPerClus, tmp, boot_entry.BPB_SecPerClus);
 	    memcpy(&dir_entry, tmp, sizeof(struct DirEntry));
 	    while((char)dir_entry.DIR_Name[0] != 0 && j < (boot_entry.BPB_BytsPerSec/32)) {
-		if (!strncmp(tg_list[i], dir_entry.DIR_Name, FN_LEN)) { /* find the subdir */
+		//		printf("%llu\n", tmp + i*sizeof(struct DirEntry));
+		if (!strncmp(tg, dir_entry.DIR_Name, FN_LEN)) { /* find the subdir */
 		    if ((i != (tg_height-1) && dir_entry.DIR_Attr == 16) || i == (tg_height-1)) {
 			found = 1;
 			printf("Target found!!!\n");
@@ -269,16 +273,32 @@ unsigned short find_clus(void) {
 
 	    /* find next cluster if not yet found */
 	    if (!found) {
-		lseek(fd, fat_sec * boot_entry.BPB_BytsPerSec + clus * 4, SEEK_SET);
+		lseek(fd, fat_sec[0] * boot_entry.BPB_BytsPerSec + clus * 4, SEEK_SET);
 		read(fd, &clus, 4);
 	    } else {
 		clus = dir_entry.DIR_FstClusLO;
+		printf("Now the clus is %d\n", clus);
 		break;
 	    }
 	}
     }
-    if (!found)
-	printf("%s:  error - file not found\n", target);
+
+    if (is_recover) {
+	if (found) {
+	    // TODO: separate this part to recover
+	    /* update DIR_Name[0] to original name */
+	    printf("%s\n", dir_entry.DIR_Name);
+	    dir_entry.DIR_Name[0] = (unsigned char)tg_list[tg_height-1][0];
+	    printf("%s\n", dir_entry.DIR_Name);
+	    memcpy(tmp + j * sizeof(struct DirEntry), &dir_entry, sizeof(struct DirEntry));
+	    memcpy(&dir_entry, tmp + j * sizeof(struct DirEntry), sizeof(struct DirEntry));
+	    printf("%llu\n", tmp + i*sizeof(struct DirEntry));
+	    printf("%s\n", dir_entry.DIR_Name);
+	    printf("Recover DIR_Name\n");
+	}
+	else
+	    printf("%s:  error - file not found\n", target);
+    }
 
     return clus;
 }
@@ -295,6 +315,7 @@ void list_tdir(void){
 	read_sec(data_sec + (clus-2) * boot_entry.BPB_SecPerClus, tmp, boot_entry.BPB_SecPerClus);
 	memcpy(&dir_entry, tmp, sizeof(struct DirEntry));
 	while ((char)dir_entry.DIR_Name[0] != 0 && i < (boot_entry.BPB_BytsPerSec/32)) { /* number of 32-bit dir_entry per sec */
+	    //	    printf("%llu\n", tmp + i*sizeof(struct DirEntry));
 	    int j = 0;
 	    printf("%d, ", ++num);
 
@@ -332,9 +353,9 @@ void list_tdir(void){
 	}
 
 	/* find next cluster */
-	lseek(fd, fat_sec * boot_entry.BPB_BytsPerSec + clus * 4, SEEK_SET);
+	lseek(fd, fat_sec[0] * boot_entry.BPB_BytsPerSec + clus * 4, SEEK_SET);
 	read(fd, &clus, 4);
-	//	printf("next clus %d\n", clus);
+	printf("next clus %d\n", clus);
 	//	read_sec(data_sec+(clus-2), tmp, boot_entry.BPB_SecPerClus);
     }
 }
@@ -345,46 +366,28 @@ void recover_tpath(void){
 
     unsigned char tmp[clus_size];
     unsigned short clus = find_clus();
+    unsigned long FAT[boot_entry.BPB_FATSz32 * boot_entry.BPB_BytsPerSec];
 
-    read_sec(data_sec + (clus-2) * boot_entry.BPB_SecPerClus, tmp, boot_entry.BPB_SecPerClus);
-    printf("%s\n", tmp);
-    /*
+    /* read FAT */
+    read_sec(fat_sec[0], (unsigned char *)FAT, boot_entry.BPB_FATSz32);
+    printf("FAT number now is: %lx\n", (unsigned long)FAT[clus]);
 
-    
-    while (clus != 0xFFFF) {
-        int i = 0;
-        read_sec(data_sec + (clus-2) * boot_entry.BPB_SecPerClus, tmp, boot_entry.BPB_SecPerClus);
-        memcpy(&dir_entry, tmp, sizeof(struct DirEntry));
-        while ((char)dir_entry.DIR_Name[0] != 0 && i < (boot_entry.BPB_BytsPerSec/32)) {
-	    if (dir_entry.DIR_Attr != 16) {
-		int j, k = 0;
-		char name[11];
-		memset(name, '\0', 11);
-		for (j=1; j<8; j++) {
-		    if (dir_entry.DIR_Name[j] == ' ')
-			continue;
-		    else
-			name[k++] = dir_entry.DIR_Name[j];
-		}
-		name[k++] = '.';
-		for (; j<11; j++) {
-		    if (dir_entry.DIR_Name[j] == ' ')
-			continue;
-		    else
-			name[k++] = dir_entry.DIR_Name[j];
-		}
-		printf("%s\n", name);
-		printf("%s\n", target);
-		if (!strncmp(name, target, 11))
-		    printf("ya\n");
-	    }
-            memcpy(&dir_entry, tmp + ++i * sizeof(struct DirEntry), sizeof(struct DirEntry));
-        }
+    if (FAT[clus] == 0) {
+	FAT[clus] = 0xfffffff;
 
-        lseek(fd, fat_sec * boot_entry.BPB_BytsPerSec + clus * 4, SEEK_SET);
-        read(fd, &clus, 4);
-    }
-    */
+	/* recover FAT */
+	write_sec(fat_sec[0], (unsigned char *)FAT, boot_entry.BPB_FATSz32);
+	write_sec(fat_sec[1], (unsigned char *)FAT, boot_entry.BPB_FATSz32);
+	printf("Recover FAT entry\n");
+
+	/* cpy content */
+	read_sec(data_sec + (clus-2) * boot_entry.BPB_SecPerClus, tmp, boot_entry.BPB_SecPerClus);
+	printf("%s\n", tmp);
+
+	// TODO: put the content to output file
+	printf("%s:  recovered\n", target);
+    } else 
+	printf("%s:  error - fail to recover\n", target);
 }
 
 int main(int argc, char *argv[]){
