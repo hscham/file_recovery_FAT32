@@ -241,7 +241,7 @@ int write_sec(int sec_num, unsigned char *buf, int num_sec) {
 }
 
 unsigned short find_clus(void) {
-    unsigned short clus = boot_entry.BPB_RootClus;
+    unsigned short clus = boot_entry.BPB_RootClus, pre_clus;
     int i, j, found;
     unsigned char tmp[clus_size];
     struct DirEntry dir_entry;
@@ -257,6 +257,7 @@ unsigned short find_clus(void) {
 
 	while (clus != 0xFFFF) {
 	    j = 0;
+	    pre_clus = clus;
 	    read_sec(data_sec + (clus-2) * boot_entry.BPB_SecPerClus, tmp, boot_entry.BPB_SecPerClus);
 	    memcpy(&dir_entry, tmp, sizeof(struct DirEntry));
 	    while((char)dir_entry.DIR_Name[0] != 0 && j < (boot_entry.BPB_BytsPerSec/32)) {
@@ -287,13 +288,10 @@ unsigned short find_clus(void) {
 	if (found) {
 	    // TODO: separate this part to recover
 	    /* update DIR_Name[0] to original name */
-	    printf("%s\n", dir_entry.DIR_Name);
 	    dir_entry.DIR_Name[0] = (unsigned char)tg_list[tg_height-1][0];
-	    printf("%s\n", dir_entry.DIR_Name);
 	    memcpy(tmp + j * sizeof(struct DirEntry), &dir_entry, sizeof(struct DirEntry));
-	    memcpy(&dir_entry, tmp + j * sizeof(struct DirEntry), sizeof(struct DirEntry));
-	    printf("%llu\n", tmp + i*sizeof(struct DirEntry));
-	    printf("%s\n", dir_entry.DIR_Name);
+	    write_sec(data_sec + (pre_clus-2) * boot_entry.BPB_SecPerClus, tmp, boot_entry.BPB_SecPerClus);
+	    // printf("pre_clus is %d, j is %d\n", pre_clus, j);
 	    printf("Recover DIR_Name\n");
 	}
 	else
@@ -315,6 +313,7 @@ void list_tdir(void){
 	read_sec(data_sec + (clus-2) * boot_entry.BPB_SecPerClus, tmp, boot_entry.BPB_SecPerClus);
 	memcpy(&dir_entry, tmp, sizeof(struct DirEntry));
 	while ((char)dir_entry.DIR_Name[0] != 0 && i < (boot_entry.BPB_BytsPerSec/32)) { /* number of 32-bit dir_entry per sec */
+	    //	    printf("clus is %d, i is %d\n", clus, i);
 	    //	    printf("%llu\n", tmp + i*sizeof(struct DirEntry));
 	    int j = 0;
 	    printf("%d, ", ++num);
@@ -364,7 +363,6 @@ void recover_tpath(void){
     printf("Task: to recover destination path %s in target directory %s from device %s\n", dest, target, device);
     printf("target: %s\n", target);
 
-    unsigned char tmp[clus_size];
     unsigned short clus = find_clus();
     unsigned long FAT[boot_entry.BPB_FATSz32 * boot_entry.BPB_BytsPerSec];
 
@@ -373,18 +371,28 @@ void recover_tpath(void){
     printf("FAT number now is: %lx\n", (unsigned long)FAT[clus]);
 
     if (FAT[clus] == 0) {
-	FAT[clus] = 0xfffffff;
+	unsigned char content[clus_size];
 
 	/* recover FAT */
+	FAT[clus] = 0xfffffff;
 	write_sec(fat_sec[0], (unsigned char *)FAT, boot_entry.BPB_FATSz32);
 	write_sec(fat_sec[1], (unsigned char *)FAT, boot_entry.BPB_FATSz32);
 	printf("Recover FAT entry\n");
 
 	/* cpy content */
-	read_sec(data_sec + (clus-2) * boot_entry.BPB_SecPerClus, tmp, boot_entry.BPB_SecPerClus);
-	printf("%s\n", tmp);
+	read_sec(data_sec + (clus-2) * boot_entry.BPB_SecPerClus, content, boot_entry.BPB_SecPerClus);
+	printf("%s\n", content);
 
-	// TODO: put the content to output file
+	/* copy content to output.txt */
+	int output_fd;
+	if ((output_fd = open(dest, O_CREAT|O_WRONLY|O_TRUNC, 0640)) == -1)
+	    perror("open");
+
+	if (write(output_fd, content, clus_size) == -1 )
+	    perror("write");
+
+	close(output_fd);
+	
 	printf("%s:  recovered\n", target);
     } else 
 	printf("%s:  error - fail to recover\n", target);
