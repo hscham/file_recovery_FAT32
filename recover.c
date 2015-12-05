@@ -193,9 +193,11 @@ char is_lfn(void){
     char name[FN_LEN + 1];
     //char *name = malloc(sizeof(FN_LEN + 1));
     strcpy(name, name_e);
+    char *noext, *ext;
+    noext = strtok(name, ".");
+    printf("%s, len: %d\n", name, strlen(name));
     if (strlen(name) < 1 || strlen(name) > 8) return 4;
     //Check extension length
-    char *ext;
     if (ext = strtok(NULL, ".")){
         if (strlen(ext) < 1 || strlen(ext) > 3) return 5;
     }
