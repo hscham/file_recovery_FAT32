@@ -199,6 +199,7 @@ char is_lfn(void){
     if (ext = strtok(NULL, ".")){
         if (strlen(ext) < 1 || strlen(ext) > 3) return 5;
     }
+    if (name_e[strlen(noext)] == '.' && ext == NULL) return 5;
     return 0;
 }
 
