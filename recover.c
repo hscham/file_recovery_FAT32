@@ -62,7 +62,7 @@ char tg_list[FN_LEN + 1][INPUT_MAX / 2]; //8.3 ver of dir entry names
 int tg_height = 0;
 char is_recover;
 //Global variables for boot sector and directory entry
-int fat_sec[2], data_sec, clus_size;
+unsigned long fat_sec[2], data_sec, clus_size;
 int dir_entry_size = sizeof(struct DirEntry);
 int boot_entry_size = sizeof(struct BootEntry);
 struct BootEntry boot_entry;
@@ -365,20 +365,20 @@ void recover_tpath(void){
     int output_fd;
 
     if (!tg_clus){
-        printf("%s: error - file not found\n", target);
+        printf("%s:  error - file not found\n", target);
         return;
     } else if (tg_clus == 1){
         if ((output_fd = open(dest, O_CREAT|O_WRONLY|O_TRUNC, 0640)) == -1)
-            perror("open");
+	    printf("%s: failed to open\n", target);
         close(output_fd);
-        printf("%s: recovered\n", target);
+        printf("%s:  recovered\n", target);
         return;
     }
 
     unsigned long FAT[boot_entry.BPB_FATSz32 * boot_entry.BPB_BytsPerSec];
     read_sec(fat_sec[0], (unsigned char *)FAT, boot_entry.BPB_FATSz32);
     if (FAT[tg_clus]){
-        printf("%s: error - fail to recover\n", target);
+        printf("%s:  error - fail to recover\n", target);
         return;
     }
 
@@ -389,7 +389,7 @@ void recover_tpath(void){
     read_sec(data_sec + (tg_clus-2) * boot_entry.BPB_SecPerClus, content, file_size);
 
     if ((output_fd = open(dest, O_CREAT|O_WRONLY|O_TRUNC, 0640)) == -1)
-        perror("open");
+	printf("%s: failed to open\n", target);
     if (write(output_fd, content, file_size) == -1)
         perror("write");
     close(output_fd);
