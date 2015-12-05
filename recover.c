@@ -172,7 +172,6 @@ void parse_target(void){
     tg_height++;
     while(tg_list_ptr[tg_height] = strtok(NULL, "/"))
         tg_height++;
-    //print_dir_tree();
 }
 
 char is_lfn(void){
@@ -195,7 +194,6 @@ char is_lfn(void){
     strcpy(name, name_e);
     char *noext, *ext;
     noext = strtok(name, ".");
-    printf("%s, len: %d\n", name, strlen(name));
     if (strlen(name) < 1 || strlen(name) > 8) return 4;
     //Check extension length
     if (ext = strtok(NULL, ".")){
@@ -216,6 +214,7 @@ void process_dirname(void){
 
     char name_e[FN_LEN + 1];
     char *name, *ext;
+    strcpy(name_e, tg_list_ptr[tg_height-1]);
     name = strtok(name_e, ".");
     memcpy(tg_list[tg_height-1], name, strlen(name));
     for (j = strlen(name); j < 8; j++)
@@ -228,6 +227,7 @@ void process_dirname(void){
         for (j = 8; j < FN_LEN; j++)
             tg_list[tg_height-1][j] = ' ';
     }
+    
     tg_list[tg_height-1][FN_LEN] = '\0';
 }
 
@@ -371,6 +371,7 @@ void recover_tpath(void){
         if ((output_fd = open(dest, O_CREAT|O_WRONLY|O_TRUNC, 0640)) == -1)
             perror("open");
         close(output_fd);
+        printf("%s: recovered\n", target);
         return;
     }
 
@@ -392,7 +393,7 @@ void recover_tpath(void){
     if (write(output_fd, content, file_size) == -1)
         perror("write");
     close(output_fd);
-    printf("%s: reocvered\n", target);
+    printf("%s: recovered\n", target);
 }
 
 int main(int argc, char *argv[]){
